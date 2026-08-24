@@ -17,5 +17,5 @@
 - **メール連携**: Gmail API (Google OAuth 2.0)
 
 ## 🎥 デモ動画
-実際の動作風景（入力からGmail下書き保存までの流れ）はこちらからご覧いただけます。
-https://youtu.be/9gz6li_mIEI?si=tq1f2ACKmjpd8BU3
+実際の動作風景（入力からGmail下書き保存までの流れ）はこちらからご覧いただけます。<br>
+https://youtu.be/9gz6li_mIEI?si=tq1f2ACKmjpd8BU3<br>https://anger-management-app-747422260737.asia-northeast1.run.app/
