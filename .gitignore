@@ -1,0 +1,4 @@
+# .gitignore の中身
+token.json
+credentials.json
+__pycache__/
