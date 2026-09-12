@@ -2,3 +2,10 @@
 token.json
 credentials.json
 __pycache__/
+
+# 本音メモ・ストレス度の記録（個人情報を含むため共有しない）
+data/
+
+# APIキー
+.streamlit/secrets.toml
+.env
