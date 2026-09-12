@@ -1,4 +1,5 @@
 import base64
+import os
 from datetime import date
 from typing import get_args
 
@@ -8,9 +9,10 @@ from pydantic import BaseModel, Field
 
 import case_log
 import gemini_client
+import gmail_auth
+import gmail_client
 import issue_agent
 import report_builder
-from gmail_client import create_gmail_draft
 from sample_data import SAMPLE_CASES
 
 
@@ -78,10 +80,12 @@ except Exception as e:
     st.warning("背景画像が見つかりませんでした。ファイル名が 'illut.png' になっているか確認してください。")
 
 # --- APIキー（環境変数 GEMINI_API_KEY / .streamlit/secrets.toml / 画面入力 のいずれか） ---
+api_key_input = ""
 with st.sidebar:
     st.header("⚙️ 設定")
-    api_key_input = st.text_input("Gemini APIキー", type="password",
-                                  help="環境変数 GEMINI_API_KEY を設定済みなら空欄のままで大丈夫です。")
+    if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("GOOGLE_API_KEY"):
+        api_key_input = st.text_input("Gemini APIキー", type="password",
+                                      help="環境変数 GEMINI_API_KEY を設定済みなら入力は不要です。")
 try:
     api_key = api_key_input or st.secrets.get("GEMINI_API_KEY")
 except Exception:
@@ -89,6 +93,42 @@ except Exception:
 if api_key and st.session_state.get('api_key') != api_key:
     gemini_client.set_api_key(api_key)
     st.session_state['api_key'] = api_key
+
+# --- Gmail連携 ---
+creds = gmail_auth.credentials()
+with st.sidebar:
+    st.subheader("Gmail連携")
+    if error := st.session_state.pop('auth_error', None):
+        st.warning(error)
+    if creds:
+        st.success("接続済み")
+        if st.button("ログアウト"):
+            gmail_auth.logout()
+            st.rerun()
+    elif gmail_auth.mode() == "web":
+        st.link_button("Googleでログイン", gmail_auth.login_url(), width="stretch")
+        st.caption("下書きの作成・読み取りの権限だけを使います。")
+    elif gmail_auth.mode() == "installed":
+        if st.button("Googleにログイン"):
+            with st.spinner("ブラウザで認証してください…"):
+                gmail_auth.login_local()
+            st.rerun()
+    else:
+        st.caption("credentials.json がないため、Gmail連携は使えません。サンプルデータはお試しいただけます。")
+
+
+def log_records() -> list[dict]:
+    """本音メモの記録（Cloud Run 上ではブラウザのセッション内だけ）"""
+    if case_log.is_ephemeral():
+        return st.session_state.setdefault('case_log', [])
+    return case_log.load_cases()
+
+
+def save_record(record: dict) -> None:
+    if case_log.is_ephemeral():
+        st.session_state.setdefault('case_log', []).append(record)
+    else:
+        case_log.append_case(record)
 
 st.title("🛡️ 教員向け アンガーマネジメントツール")
 tab_mail, tab_agent = st.tabs(["✉️ メールを書く", "🧭 課題を見つけて相談資料をつくる"])
@@ -138,15 +178,17 @@ with tab_mail:
         keep_memo = st.checkbox("本音メモとストレス度を、課題分析用にこのPC内へ記録する（保護者には送られません）",
                                 value=True)
 
-        if st.button("Gmailの下書きに保存する"):
+        if st.button("Gmailの下書きに保存する", disabled=creds is None):
             try:
                 with st.spinner("Gmailに下書きを保存中..."):
-                    draft_id = create_gmail_draft(edited_subject, edited_body)
-                    case_log.append_case(draft_id, edited_subject, edited_body, score,
-                                         st.session_state.get('memo') if keep_memo else None)
+                    draft_id = gmail_client.create_gmail_draft(creds, edited_subject, edited_body)
+                    save_record(case_log.make_record(draft_id, edited_subject, edited_body, score,
+                                                     st.session_state.get('memo') if keep_memo else None))
                     st.success("✅ Gmailの下書きに保存しました！ブラウザでGmailを開いて確認してください。")
             except Exception as e:
                 st.error(f"下書き保存エラーが発生しました: {e}")
+        if creds is None:
+            st.caption("下書きの保存には、左の「Gmail連携」からログインしてください。")
 
 # ==========================================
 # タブ2：課題分析エージェント → 学年主任との打ち合わせ資料
@@ -234,8 +276,11 @@ with tab_agent:
              "学年主任との打ち合わせ資料づくり** までを行います。")
     st.caption("① 下書きを集める　② 1件ずつ読み解く（氏名は匿名化）　③ 集計する　④ 共通する課題を探す　⑤ アプローチを考える")
 
-    source = st.radio("分析する下書き", ["Gmailの下書き", "サンプルデータ（デモ用）"], horizontal=True)
+    source = st.radio("分析する下書き", ["Gmailの下書き", "サンプルデータ（デモ用）"],
+                      horizontal=True, index=0 if creds else 1)
     if source == "Gmailの下書き":
+        if creds is None:
+            st.info("Gmailの下書きを分析するには、左の「Gmail連携」からログインしてください。")
         s1, s2 = st.columns(2)
         days = s1.selectbox("対象期間", [7, 14, 30, 60, 90], index=2, format_func=lambda d: f"直近{d}日")
         max_drafts = s2.number_input("読み込む下書きの上限", min_value=5, max_value=100, value=30, step=5)
@@ -243,10 +288,12 @@ with tab_agent:
     grade = m1.text_input("学年・学級（資料に記載）", placeholder="例: 2年3組")
     author = m2.text_input("作成者（資料に記載）", placeholder="例: 山本")
 
-    if st.button("🤖 エージェントで課題を分析する", type="primary"):
+    if st.button("🤖 エージェントで課題を分析する", type="primary",
+                 disabled=source == "Gmailの下書き" and creds is None):
         with st.status("エージェントが作業しています…", expanded=True) as status:
             try:
-                raw_cases = SAMPLE_CASES if source != "Gmailの下書き" else issue_agent.collect_cases(days, max_drafts)
+                raw_cases = (issue_agent.collect_cases(creds, days, max_drafts, log_records())
+                             if source == "Gmailの下書き" else SAMPLE_CASES)
                 result = issue_agent.run_agent(raw_cases, on_step=st.write)
                 st.write("🖼️ グラフを作成しています…")
                 st.session_state['agent_charts'] = report_builder.chart_pngs(result)

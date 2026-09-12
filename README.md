@@ -47,11 +47,17 @@ set GEMINI_API_KEY=あなたのAPIキー
 streamlit run app.py
 ```
 
-Gmail連携には、Google Cloud Console で作成した `credentials.json` をこのフォルダに置いてください。初回はブラウザでGoogleアカウントの認証が求められます。
+Gmail連携には、Google Cloud Console で作成した `credentials.json`（デスクトップ アプリ）をこのフォルダに置き、画面左の「Gmail連携」からログインしてください。
+
+## ☁️ Cloud Run へのデプロイ
+
+手順は [DEPLOY.md](DEPLOY.md) にまとめています。Cloud Run 版では、画面の「Googleでログイン」から各自のGmailに接続します（`GOOGLE_OAUTH_CLIENT_JSON` と `OAUTH_REDIRECT_URI` を設定）。APIキーとOAuthクライアントは Secret Manager に置き、コードには書きません。
 
 ## 🔒 個人情報の扱い
 
 - Gemini API は `store=False`（会話をサーバーに保存しない設定）で呼び出しています。
+- Gmailの権限は「下書きの作成・読み取り」（`gmail.compose`）だけを要求します。受信トレイは読みません。
+- Cloud Run 版では、本音メモの記録はブラウザのセッション内だけに保持し、サーバーには残しません。
 - 本音メモの記録（`data/`）、`token.json`、`credentials.json` は `.gitignore` 済みで、リポジトリには含まれません。
 - 打ち合わせ資料には氏名を載せず、「保護者A」「生徒」などに置き換えています。内容は校内限りで扱ってください。
 

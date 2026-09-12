@@ -17,7 +17,6 @@ from typing import Callable, Literal
 
 from pydantic import BaseModel, Field
 
-import case_log
 import gmail_client
 from gemini_client import generate_structured
 
@@ -96,13 +95,13 @@ SYSTEM = (
 
 
 # ---------- 1. 収集 ----------
-def collect_cases(days: int, max_drafts: int) -> list[dict]:
+def collect_cases(creds, days: int, max_drafts: int, log_records: list[dict]) -> list[dict]:
     """Gmailの下書きとツールの記録を突き合わせて、分析対象の一覧を作る"""
     since = date.today() - timedelta(days=days)
-    logs = {r["draft_id"]: r for r in case_log.load_cases()}
+    logs = {r["draft_id"]: r for r in log_records}
 
     cases = []
-    for draft in gmail_client.list_drafts(max_drafts, since):
+    for draft in gmail_client.list_drafts(creds, max_drafts, since):
         log = logs.pop(draft["draft_id"], {})
         cases.append({**draft, "memo": log.get("memo"), "anger_score": log.get("anger_score"),
                       "status": "下書き保存中"})

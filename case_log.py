@@ -4,15 +4,20 @@
 data/ フォルダは .gitignore 済みです。
 """
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
 LOG_PATH = Path(__file__).parent / "data" / "case_log.jsonl"
 
 
-def append_case(draft_id: str, subject: str, body: str, anger_score: int, memo: str | None) -> None:
-    LOG_PATH.parent.mkdir(exist_ok=True)
-    record = {
+def is_ephemeral() -> bool:
+    """Cloud Run 上ではファイルに残しても消えるうえ、利用者どうしで共有されてしまうため保存しない"""
+    return bool(os.environ.get("K_SERVICE"))
+
+
+def make_record(draft_id: str, subject: str, body: str, anger_score: int, memo: str | None) -> dict:
+    return {
         "draft_id": draft_id,
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "subject": subject,
@@ -20,6 +25,10 @@ def append_case(draft_id: str, subject: str, body: str, anger_score: int, memo: 
         "anger_score": anger_score,
         "memo": memo,
     }
+
+
+def append_case(record: dict) -> None:
+    LOG_PATH.parent.mkdir(exist_ok=True)
     with LOG_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
