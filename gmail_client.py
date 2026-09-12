@@ -1,40 +1,13 @@
-"""Gmail API：認証・下書きの保存・下書きの読み込み"""
+"""Gmail API：下書きの保存・読み込み（認証は gmail_auth.py）"""
 import base64
-import os.path
 import re
 from datetime import date, datetime
 from email.message import EmailMessage
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 
-
-def get_credentials():
-    """Gmail APIの認証情報を取得・更新する"""
-    creds = None
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
-    return creds
-
-
-def _service():
-    return build('gmail', 'v1', credentials=get_credentials())
-
-
-def create_gmail_draft(subject_text: str, body_text: str) -> str:
+def create_gmail_draft(creds, subject_text: str, body_text: str) -> str:
     """Gmailに下書きを保存し、下書きIDを返す"""
     message = EmailMessage()
     message.set_content(body_text)
@@ -44,7 +17,8 @@ def create_gmail_draft(subject_text: str, body_text: str) -> str:
 
     encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
     create_message = {'message': {'raw': encoded_message}}
-    draft = _service().users().drafts().create(userId='me', body=create_message).execute()
+    draft = build('gmail', 'v1', credentials=creds).users().drafts().create(
+        userId='me', body=create_message).execute()
     return draft['id']
 
 
@@ -75,9 +49,9 @@ def _extract_text(payload: dict) -> str:
     return ''
 
 
-def list_drafts(max_results: int = 30, since: date | None = None) -> list[dict]:
+def list_drafts(creds, max_results: int = 30, since: date | None = None) -> list[dict]:
     """下書きを本文ごと取得する。戻り値は新しい順の dict のリスト"""
-    service = _service()
+    service = build('gmail', 'v1', credentials=creds)
     query = f"after:{since:%Y/%m/%d}" if since else None
     results = service.users().drafts().list(userId='me', maxResults=max_results, q=query).execute()
 
